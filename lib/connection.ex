@@ -29,7 +29,7 @@ defmodule Kadabra.Connection do
     end
   end
 
-  defp initial_state(socket, uri, pid, opts) do
+  defp initial_state(socket, uri, pid, opts, stream_id \\ 1, streams \\ %{}) do
    {:ok, encoder} =  HPack.Table.start_link(1000)
    {:ok, decoder} =  HPack.Table.start_link(1000)
    %{
@@ -37,9 +37,11 @@ defmodule Kadabra.Connection do
       client: pid,
       uri: uri,
       scheme: opts[:scheme] || :https,
+      opts: opts,
       socket: socket,
-      stream_id: 1,
-      streams: %{},
+      stream_id: stream_id,
+      streams: streams,
+      reconnect: true,
       encoder_state: encoder,
       decoder_state: decoder
     }
@@ -243,7 +245,7 @@ defmodule Kadabra.Connection do
   end
 
   def handle_info({:tcp_closed, _socket}, state) do
-    {:noreply, state}
+    maybe_reconnect(state)
   end
 
   def handle_info({:ssl, _socket, bin}, state) do
@@ -251,7 +253,7 @@ defmodule Kadabra.Connection do
   end
 
   def handle_info({:ssl_closed, _socket}, state) do
-    {:noreply, state}
+   maybe_reconnect(state)
   end
 
   defp do_recv_ssl(bin, %{socket: socket} = state) do
@@ -314,6 +316,21 @@ defmodule Kadabra.Connection do
   def parse_settings(bin) do
     <<identifier::16, value::32, rest::bitstring>> = bin
     [{settings_param(identifier), value}] ++ parse_settings(rest)
+  end
+
+  def maybe_reconnect(%{reconnect: false, client: pid} = state) do
+    send(pid, {:closed, self()})
+    {:stop, :normal}
+  end
+
+  def maybe_reconnect(%{reconnect: true, uri: uri, opts: opts, client: pid} = state) do
+    case do_connect(uri, opts) do
+      {:ok, socket} ->
+        {:noreply,  %{state | socket: socket}}
+      {:error, error} ->
+        send(pid, :closed)
+         {:stop, :normal}
+    end
   end
 
   defp get_status(headers) do
