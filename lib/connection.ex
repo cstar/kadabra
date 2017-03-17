@@ -318,6 +318,21 @@ defmodule Kadabra.Connection do
     [{settings_param(identifier), value}] ++ parse_settings(rest)
   end
 
+  def maybe_reconnect(%{reconnect: false, client: pid} = state) do
+    send(pid, {:closed, self()})
+    {:stop, :normal}
+  end
+
+  def maybe_reconnect(%{reconnect: true, uri: uri, opts: opts, client: pid} = state) do
+    case do_connect(uri, opts) do
+      {:ok, socket} ->
+        {:noreply,  %{state | socket: socket}}
+      {:error, error} ->
+        send(pid, :closed)
+         {:stop, :normal}
+    end
+  end
+
   defp get_status(headers) do
     case Enum.find(headers, fn({key, _val}) -> key == ":status" end) do
       {":status", status} -> status
