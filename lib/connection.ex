@@ -23,8 +23,6 @@ defmodule Kadabra.Connection do
     case do_connect(uri, opts) do
       {:ok, socket} ->
         state = initial_state(socket, uri, pid, opts)
-        Logger.debug "Initial state on init:"
-        state |> inspect |> Logger.debug 
         {:ok, state}
       {:error, error} ->
         Logger.error(inspect(error))
@@ -250,7 +248,6 @@ defmodule Kadabra.Connection do
   end
 
   defp remove_stream %{streams: streams} = state, id do
-    Logger.debug "removing stream #{id}"
     id_string = Integer.to_string(id)
     %{state | streams: Map.delete(streams, id_string) }
   end
@@ -260,7 +257,6 @@ defmodule Kadabra.Connection do
   end
 
   def handle_info({:tcp_closed, _socket}, state) do
-    Logger.info "TCP Socket closed"
     maybe_reconnect(state)
   end
 
@@ -269,7 +265,6 @@ defmodule Kadabra.Connection do
   end
 
   def handle_info({:ssl_closed, _socket}, state) do
-    Logger.info "SSL Socket closed"
    maybe_reconnect(state)
   end
 
@@ -298,6 +293,7 @@ defmodule Kadabra.Connection do
   def handle_response(frame) when is_binary(frame) do
     Logger.info "Got binary: #{inspect(frame)}"
   end
+
   def handle_response(frame) do
     case frame[:frame_type] do
       @data ->
@@ -338,7 +334,7 @@ defmodule Kadabra.Connection do
   end
 
   def maybe_reconnect(%{reconnect: false, client: pid} = state) do
-    Logger.info "Socket closed, not reopening, informing client"
+    Logger.debug "Socket closed, not reopening, informing client"
     send(pid, {:closed, self()})
     {:stop, :normal, state}
   end
@@ -346,7 +342,7 @@ defmodule Kadabra.Connection do
   def maybe_reconnect(%{reconnect: true, uri: uri, opts: opts, client: pid} = state) do
     case do_connect(uri, opts) do
       {:ok, socket} ->
-        Logger.info "Socket closed, reopened automatically"
+        Logger.debug "Socket closed, reopened automatically"
         state |> inspect |> Logger.info 
         {:ok, encoder} =  HPack.Table.start_link(1000)
         {:ok, decoder} =  HPack.Table.start_link(1000)
